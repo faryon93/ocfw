@@ -62,6 +62,25 @@ func connect(conf *config.Config) (int) {
         }    
     }
 
+    // add a jump to all group chains the user is assigned to
+    for _,group := range user.Groups {
+        // metadata
+        groupChain := "VPN_GROUP_" + strings.ToUpper(group)
+
+        // check if the assigned group is a valid group
+        if _, valid := conf.Groups[group]; !valid {
+            log.Println("user", ocenv.Username, "is assigned to invalid group", group)
+            continue
+        }
+
+        // add the jump
+        err = iptables.Chain(clientChain).Prepend().Jump(groupChain).Apply()
+        if err != nil {
+            log.Println("failed to add group jump rule", groupChain + ":", err.Error())
+            return -1
+        }
+    }
+
     // make the client use its own chain
     err = iptables.Chain("FORWARD").Prepend().SrcIf(ocenv.TunDevice).Jump(clientChain).Apply()
     if err != nil {
