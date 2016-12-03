@@ -29,5 +29,10 @@ func FlushChain(name string) (error) {
 }
 
 func DeleteChain(name string) (error) {
+    err := FlushChain(name)
+    if err != nil {
+        return err
+    }
+
     return iptables("-X", name)
 }

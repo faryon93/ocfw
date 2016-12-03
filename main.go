@@ -21,12 +21,23 @@ package main
 // ----------------------------------------------------------------------------------
 
 import (
+    "fmt"
     "log"
-    "strings"
     "os"
 
     "github.com/faryon93/ocfw/ocenv"
-    "github.com/faryon93/ocfw/iptables"
+    "github.com/faryon93/ocfw/config"
+
+    "github.com/alexflint/go-filemutex"
+)
+
+
+// ----------------------------------------------------------------------------------
+//  constants
+// ----------------------------------------------------------------------------------
+
+const (
+    CONFIG_FILE = "/etc/ocserv/ocfw.conf"
 )
 
 
@@ -35,69 +46,41 @@ import (
 // ----------------------------------------------------------------------------------
 
 func main() {
-    // some metadata
-    clientChain := "VPN_CLIENT_" + strings.ToUpper(ocenv.TunDevice)
+    retval := 0
+    defer os.Exit(retval)
+
+    // load the config file
+    conf, err := config.Load(CONFIG_FILE)
+    if err != nil {
+        fmt.Println("failed to load configuration file:", err.Error())
+        retval = -1
+        return
+    }
+
+    // aquire the lockfile
+    mutex, err := filemutex.New(conf.Common.LockFile)
+    if err != nil {
+        log.Println("failed to aquire lock file:", err.Error())
+        retval = -1
+        return
+    }
+    mutex.Lock()
+    defer mutex.Unlock()
+
+    // print some info
+    log.Println("user", ocenv.Username, ocenv.Reason, "from", ocenv.RealIp)
 
     // a connect job
     if ocenv.IsConnect() {
-        // create chain for the client
-        err := iptables.NewChain(clientChain)
-        if err != nil {
-            log.Println("failed to create client chain:", err.Error())
-            os.Exit(-1)
-        }
-
-        // add some allowed hosts for this client
-        err = iptables.Chain(clientChain).
-                Append().
-                Destination("192.168.2.254").
-                Accept().
-                Apply()
-        if err != nil {
-            log.Println("failed to populate client chain with custom hosts:", err.Error())
-            os.Exit(-1)
-        }
-
-        // the client should jump to its own chain
-        err = iptables.Chain("FORWARD").
-                Prepend().
-                SrcIf(ocenv.TunDevice).
-                Jump(clientChain).
-                Apply()
-        if err != nil {
-            log.Println("failed to apply jump rule:", err.Error())
-            os.Exit(-1)
-        }   
-
-        log.Println("successfully set up firewall for", ocenv.Username)
+        retval = connect()
 
     // this is a disconnect call
     } else if (ocenv.IsDisconnect()) {
-        // flush client chain
-        err := iptables.FlushChain(clientChain)
-        if err != nil {
-            log.Println("failed to flush client chain", clientChain + ":", err.Error())
-            os.Exit(-1)
-        }
+        retval = disconnect()
 
-        // delete references to the client chain
-        err = iptables.Chain("FORWARD").
-                Delete().
-                SrcIf(ocenv.TunDevice).
-                Jump(clientChain).
-                Apply()
-        if err != nil {
-            log.Println("failed to delete jump rule:", err.Error())
-            os.Exit(-1)
-        }   
-
-        // delete chain
-        err = iptables.DeleteChain(clientChain) 
-        if err != nil {
-            log.Println("failed to delete client chain", clientChain + ":", err.Error())
-            os.Exit(-1)
-        }
-
-        log.Println("successfully removed firewall rules for", ocenv.Username)
+    // invalid REASON
+    } else {
+        log.Println("failure: invalid openconnect reason:", "\"" + ocenv.Reason + "\"")
+        retval = -1
     }
 }
