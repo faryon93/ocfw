@@ -1,0 +1,11 @@
+{
+	"project": {
+		"name": "ocfw",
+		"description": "open connect server firewall script",
+		"package": "github.com/faryon93/ocfw"
+	},
+	"go": {
+		"min-version": "1.7.1"
+	},
+	"assets": []
+}
