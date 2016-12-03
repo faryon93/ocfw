@@ -24,8 +24,10 @@ import (
     "fmt"
     "log"
     "os"
+    "strings"
 
     "github.com/faryon93/ocfw/ocenv"
+    "github.com/faryon93/ocfw/iptables"
     "github.com/faryon93/ocfw/config"
 
     "github.com/alexflint/go-filemutex"
@@ -67,20 +69,85 @@ func main() {
     mutex.Lock()
     defer mutex.Unlock()
 
-    // print some info
+    // norma ocserver connection handler
+    if len(os.Args) < 2 {
+        retval = connection(conf)
+
+    // firewall setup mode
+    } else {
+        retval = setup(conf)
+    }
+}
+
+
+// ----------------------------------------------------------------------------------
+//  application modi
+// ----------------------------------------------------------------------------------
+
+func connection(conf *config.Config) (int) {
+    // print some info aber the request
     log.Println("user", ocenv.Username, ocenv.Reason, "from", ocenv.RealIp)
 
     // a connect job
     if ocenv.IsConnect() {
-        retval = connect()
+        return connect(conf)
 
     // this is a disconnect call
     } else if (ocenv.IsDisconnect()) {
-        retval = disconnect()
-
-    // invalid REASON
-    } else {
-        log.Println("failure: invalid openconnect reason:", "\"" + ocenv.Reason + "\"")
-        retval = -1
+        return disconnect(conf)
     }
+
+    // invalid REASON was supplied
+    log.Println("failure: invalid openconnect reason:", "\"" + ocenv.Reason + "\"")
+    return -1
+}
+
+func setup(conf *config.Config) (int) {
+    log.Println("initializing iptables firewall")
+
+    // flush the forward chain
+    err := iptables.FlushChain("FORWARD") 
+    if err != nil {
+        log.Println("failed to flush the FORWARD chain:", err.Error())
+        return -1
+    }
+
+    // allow established and related connections
+    err = iptables.Chain("FORWARD").Append().State("ESTABLISHED", "RELATED").Accept().Apply()
+    if err != nil {
+        log.Println("failed to allow ESTABLISHED and RELATED connections:", err.Error())
+        return -1
+    }
+
+    // drop anything else
+    err = iptables.Chain("FORWARD").Append().Drop().Apply()
+    if err != nil {
+        log.Println("failed to drop anything else:", err.Error())
+        return -1
+    }
+
+    // setup all groups as individual chains
+    for name, group := range conf.Groups {
+        // some metadata
+        groupChain := "VPN_GROUP_" + strings.ToUpper(name)
+
+        // create the new group specific chains
+        err = iptables.NewChain(groupChain)
+        if err != nil {
+            log.Println("failed to create group chain", groupChain + ":", err.Error())
+            return -1
+        }
+
+        // add all allows to the group specific chains
+        for _, destination := range group.Allow {
+            err = iptables.Chain(groupChain).Append().Destination(destination).Accept().Apply()
+            if err != nil {
+                log.Println("failed to add allowed destination", destination + ":", err.Error())
+            }
+        }
+        
+        log.Println("created chain", groupChain)
+    }
+
+    return 0
 }

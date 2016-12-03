@@ -70,9 +70,8 @@ func (r Rule) Delete() (Rule) {
     return "-D " + r
 }
 
-
 func (r Rule) SrcIf(iface string) (Rule) {
-    if strings.Contains(string(r), "-i",) {
+    if strings.Contains(string(r), "-i") {
         return r
     }
 
@@ -80,11 +79,19 @@ func (r Rule) SrcIf(iface string) (Rule) {
 }
 
 func (r Rule) Destination(dst string) (Rule) {
-    if strings.Contains(string(r), "-d",) {
+    if strings.Contains(string(r), "-d") {
         return r
     }
 
     return r + " -d " + Rule(dst)
+}
+
+func (r Rule) State(state ...string) (Rule) {
+    if strings.Contains(string(r), "-m state") {
+        return r
+    }
+
+    return r + " -m state --state " + Rule(strings.Join(state, ","))
 }
 
 func (r Rule) Accept() (Rule) {

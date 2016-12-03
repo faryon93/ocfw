@@ -26,6 +26,7 @@ import (
 
     "github.com/faryon93/ocfw/ocenv"
     "github.com/faryon93/ocfw/iptables"
+    "github.com/faryon93/ocfw/config"
 )
 
 
@@ -33,7 +34,7 @@ import (
 //  functions
 // ----------------------------------------------------------------------------------
 
-func disconnect() (int) {
+func disconnect(conf *config.Config) (int) {
     // some metadata
     clientChain := "VPN_CLIENT_" + strings.ToUpper(ocenv.TunDevice)
 
@@ -45,16 +46,16 @@ func disconnect() (int) {
             Apply()
     if err != nil {
         log.Println("failed to delete jump rule:", err.Error())
-        return -1
     }   
 
     // delete chain
     err = iptables.DeleteChain(clientChain) 
     if err != nil {
         log.Println("failed to delete client chain", clientChain + ":", err.Error())
-        return -1
     }
 
-    log.Println("successfully removed firewall rules for", ocenv.Username)
+    if err == nil {
+        log.Println("successfully removed firewall rules for", ocenv.Username)
+    }
     return 0
 }

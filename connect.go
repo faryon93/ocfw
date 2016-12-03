@@ -26,6 +26,7 @@ import (
 
     "github.com/faryon93/ocfw/ocenv"
     "github.com/faryon93/ocfw/iptables"
+    "github.com/faryon93/ocfw/config"
 )
 
 
@@ -33,10 +34,17 @@ import (
 //  functions
 // ----------------------------------------------------------------------------------
 
-func connect() (int) {
+func connect(conf *config.Config) (int) {
     // some metadata
     clientChain := "VPN_CLIENT_" + strings.ToUpper(ocenv.TunDevice)
-    
+
+    // check if there is some configuration for the user
+    user, valid := conf.Users[ocenv.Username]
+    if !valid {
+        log.Println("no rules configured for user", ocenv.Username)
+        return 0
+    }
+
     // create chain for the client
     err := iptables.NewChain(clientChain)
     if err != nil {
@@ -44,23 +52,18 @@ func connect() (int) {
         return -1
     }
 
-    // add some allowed hosts for this client
-    err = iptables.Chain(clientChain).
-            Append().
-            Destination("192.168.2.254").
-            Accept().
-            Apply()
-    if err != nil {
-        log.Println("failed to populate client chain with custom hosts:", err.Error())
-        return -1
+    // add the allowed hosts to the client chain
+    for _, allowed := range user.Allow {
+        // add some allowed hosts for this client
+        err = iptables.Chain(clientChain).Append().Destination(allowed).Accept().Apply()
+        if err != nil {
+            log.Println("failed to populate client chain with custom hosts:", err.Error())
+            return -1
+        }    
     }
 
-    // the client should jump to its own chain
-    err = iptables.Chain("FORWARD").
-            Prepend().
-            SrcIf(ocenv.TunDevice).
-            Jump(clientChain).
-            Apply()
+    // make the client use its own chain
+    err = iptables.Chain("FORWARD").Prepend().SrcIf(ocenv.TunDevice).Jump(clientChain).Apply()
     if err != nil {
         log.Println("failed to apply jump rule:", err.Error())
         return -1
